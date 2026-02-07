@@ -18,6 +18,10 @@ export default {
       return handleRedirect(url, env);
     }
 
+    if (url.pathname === '/qr.inline') {
+      return handleInline(url, env);
+    }
+
     const match = CANONICAL_RE.exec(url.pathname);
     if (match) {
       return handleCanonical(request, url, env, ctx, match[1], match[2]);
@@ -53,6 +57,33 @@ async function handleRedirect(url: URL, env: Env): Promise<Response> {
   });
 }
 
+async function handleInline(url: URL, env: Env): Promise<Response> {
+  const result = parseParams(url, env);
+  if (!result.ok) {
+    return result.status === 413
+      ? payloadTooLarge(result.message)
+      : badRequest(result.message);
+  }
+
+  const { params } = result;
+  const preset = getPreset(params.preset);
+
+  try {
+    const matrix = generateMatrix(params.data, params.ecc);
+    const svg = renderSvg(matrix, params.quiet, preset);
+
+    return new Response(svg, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/svg+xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=3600',
+      },
+    });
+  } catch (err) {
+    return internalError(err instanceof Error ? err.message : 'QR generation failed');
+  }
+}
+
 async function handleCanonical(
   request: Request,
   url: URL,
@@ -80,7 +111,9 @@ async function handleCanonical(
 
   // Cache MISS — need query params to generate
   const data = url.searchParams.get('data');
-  if (!data) return notFound();
+  if (!data) {
+    return badRequest('Cache miss and no data param. Use /qr.svg?data=... to generate.');
+  }
 
   const ecc = (url.searchParams.get('ecc') ?? env.DEFAULT_ECC ?? 'M').toUpperCase();
   const quiet = Number(url.searchParams.get('q') ?? env.DEFAULT_QUIET ?? '4');
