@@ -13,13 +13,15 @@ Cloudflare Worker that generates ultra-lightweight B/W QR codes as optimized SVG
 | `data` | yes | — | URL or string to encode |
 | `p` | no | `sq250` | Preset: `sq125`, `sq200`, `sq250`, `sq300` |
 | `ecc` | no | `M` | Error correction: `L`, `M`, `Q`, `H` |
-| `q` | no | `4` | Quiet zone in modules (0–16) |
+| `q` | no | `2` | Quiet zone in modules (0–16) |
 
 Returns **302** → `/qr/<preset>/<sha256>.svg` with params in query for cold-cache regeneration.
 
 ### `GET /qr.inline` — direct SVG response (for embedding)
 
-Same params as above. Returns **200** with `image/svg+xml` — no redirect, no edge cache magic. Use this for Webstudio inline embedding or copy-paste.
+Same params as above. Returns **200** with `image/svg+xml` — no redirect, ideal for Webstudio inline embedding or copy-paste.
+
+Edge-cached by full URL (24h TTL). Same URL = instant response from cache on subsequent requests. `X-QR-Cache: HIT|MISS` header for diagnostics.
 
 ### `GET /qr/<preset>/<hash>.svg` — canonical (edge-cached)
 
