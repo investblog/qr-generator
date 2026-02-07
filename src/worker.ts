@@ -19,7 +19,7 @@ export default {
     }
 
     if (url.pathname === '/qr.inline') {
-      return handleInline(url, env);
+      return handleInline(request, url, env, ctx);
     }
 
     const match = CANONICAL_RE.exec(url.pathname);
@@ -57,7 +57,16 @@ async function handleRedirect(url: URL, env: Env): Promise<Response> {
   });
 }
 
-async function handleInline(url: URL, env: Env): Promise<Response> {
+async function handleInline(request: Request, url: URL, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const cache = caches.default;
+
+  const cached = await cache.match(request);
+  if (cached) {
+    const headers = new Headers(cached.headers);
+    headers.set('X-QR-Cache', 'HIT');
+    return new Response(cached.body, { status: 200, headers });
+  }
+
   const result = parseParams(url, env);
   if (!result.ok) {
     return result.status === 413
@@ -72,13 +81,17 @@ async function handleInline(url: URL, env: Env): Promise<Response> {
     const matrix = generateMatrix(params.data, params.ecc);
     const svg = renderSvg(matrix, params.quiet, preset);
 
-    return new Response(svg, {
-      status: 200,
-      headers: {
-        'Content-Type': 'image/svg+xml; charset=utf-8',
-        'Cache-Control': 'public, max-age=3600',
-      },
+    const headers = new Headers({
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=86400',
+      'X-QR-Cache': 'MISS',
     });
+
+    const response = new Response(svg, { status: 200, headers });
+
+    ctx.waitUntil(cache.put(request, new Response(svg, { status: 200, headers })));
+
+    return response;
   } catch (err) {
     return internalError(err instanceof Error ? err.message : 'QR generation failed');
   }
