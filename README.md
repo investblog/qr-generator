@@ -104,9 +104,17 @@ npm run typecheck    # tsc --noEmit
 
 ### CI/CD (GitHub Actions)
 
-Automatic deploy on push to `main`. Add repo secrets:
-- `CLOUDFLARE_API_TOKEN` — create at [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens) → "Edit Cloudflare Workers" template
-- `CLOUDFLARE_ACCOUNT_ID` — found in Workers & Pages → Overview (right sidebar)
+Automatic deploy on push to `main`. Add two repo secrets (`Settings → Secrets and variables → Actions`):
+
+**`CLOUDFLARE_ACCOUNT_ID`** — found in [Cloudflare Dashboard](https://dash.cloudflare.com/) → Workers & Pages → right sidebar
+
+**`CLOUDFLARE_API_TOKEN`** — create at [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens):
+1. Click **Create Token**
+2. Find **"Edit Cloudflare Workers"** template → **Use template**
+3. Account Resources → your account
+4. Zone Resources → All zones
+5. **Continue to summary** → **Create Token**
+6. Copy the token (shown once)
 
 ## Webstudio integration
 
