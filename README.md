@@ -125,7 +125,11 @@ By default the worker is open (no auth). To restrict access, set `API_KEY` in `w
 API_KEY = "your-secret-key"
 ```
 
-When set, every request must include the header `X-API-Key: your-secret-key`, otherwise the worker returns `401 Unauthorized`. Leave empty to keep open access.
+When set, every request must include the header, otherwise the worker returns `401 Unauthorized`. Leave empty to keep open access.
+
+```bash
+curl -H "X-API-Key: your-secret-key" "https://<your-worker>.workers.dev/qr.inline?data=https://example.com"
+```
 
 ## Webstudio integration
 
@@ -133,6 +137,7 @@ When set, every request must include the header `X-API-Key: your-secret-key`, ot
 2. Method: **Get**
 3. URL: `https://<your-worker>.workers.dev/qr.inline`
 4. Search Params: `data` = your target URL
+5. If API key is enabled — Headers: `X-API-Key` = `your-secret-key`
 
 For dynamic QR codes per page, use an expression in the `data` param — concatenate your base URL with `system.params.slug` or any other variable.
 
