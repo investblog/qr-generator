@@ -131,15 +131,42 @@ When set, every request must include the header, otherwise the worker returns `4
 curl -H "X-API-Key: your-secret-key" "https://<your-worker>.workers.dev/qr.inline?data=https://example.com"
 ```
 
-## Webstudio integration
+## [Webstudio](https://webstudio.is) integration
 
-1. Create a **Resource** variable (e.g. `_qr`)
-2. Method: **Get**
-3. URL: `https://<your-worker>.workers.dev/qr.inline`
-4. Search Params: `data` = your target URL
-5. If API key is enabled — Headers: `X-API-Key` = `your-secret-key`
+### Static QR code
 
-For dynamic QR codes per page, use an expression in the `data` param — concatenate your base URL with `system.params.slug` or any other variable.
+1. Open your project in [Webstudio](https://webstudio.is)
+2. In the left panel, go to **Variables** → click **+** → **New Resource**
+3. Name it (e.g. `_qr`)
+4. Method: **Get**
+5. URL: `https://<your-worker>.workers.dev/qr.inline`
+6. Click **+** under **Search Params**, add:
+   - Name: `data`, Value: the URL you want to encode (e.g. `https://example.com`)
+7. If API key is enabled — click **+** under **Headers**, add:
+   - Name: `X-API-Key`, Value: your secret key
+8. Use the resource in an HTML Embed or Image component — bind `src` to the resource URL or use the response body as inline SVG
+
+### Dynamic QR code (unique per page)
+
+To generate a different QR code for each page (e.g. based on a URL slug):
+
+1. Create the Resource as above
+2. In the `data` search param, switch to **Expression** mode
+3. Use an expression like:
+   ```
+   "https://your-domain.com/go/" + system.params.slug
+   ```
+4. Each page with a different slug will get its own QR code, edge-cached automatically
+
+### Customization params
+
+Add more search params to customize the output:
+
+| Param | Example | Description |
+|-------|---------|-------------|
+| `p` | `sq125` | Size preset: `sq125`, `sq200`, `sq250` (default), `sq300` |
+| `ecc` | `H` | Error correction: `L`, `M` (default), `Q`, `H` |
+| `q` | `0` | Quiet zone in modules: 0–16 (default 2) |
 
 ## Tech
 
