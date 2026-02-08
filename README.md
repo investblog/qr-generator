@@ -136,8 +136,8 @@ curl -H "X-API-Key: your-secret-key" "https://<your-worker>.workers.dev/qr.inlin
 ### Static QR code
 
 1. Open your project in [Webstudio](https://webstudio.is)
-2. In the right panel, open **Settings** → scroll to **Data Variables** → click **+** → **New Resource**
-3. Name it (e.g. `_qr`)
+2. In the right panel, open **Settings** → scroll to **Data Variables** → click **+**
+3. Name it (e.g. `_qr`), set Type to **Resource**
 4. Method: **Get**
 5. URL: `https://<your-worker>.workers.dev/qr.inline`
 6. Click **+** under **Search Params**, add:
