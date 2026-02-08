@@ -116,6 +116,17 @@ Automatic deploy on push to `main`. Add two repo secrets (`Settings → Secrets 
 5. **Continue to summary** → **Create Token**
 6. Copy the token (shown once)
 
+## API key (optional)
+
+By default the worker is open (no auth). To restrict access, set `API_KEY` in `wrangler.toml` or in Cloudflare Dashboard → Workers → Settings → Variables:
+
+```toml
+[vars]
+API_KEY = "your-secret-key"
+```
+
+When set, every request must include the header `X-API-Key: your-secret-key`, otherwise the worker returns `401 Unauthorized`. Leave empty to keep open access.
+
 ## Webstudio integration
 
 1. Create a **Resource** variable (e.g. `_qr`)
