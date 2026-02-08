@@ -59,11 +59,40 @@ npm run typecheck    # tsc --noEmit
 
 ## Deploy
 
-Deployment runs automatically via GitHub Actions on push to `main`.
+### Quick setup (manual)
 
-Requires repo secrets:
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
+1. [Sign up](https://dash.cloudflare.com/sign-up) for a free Cloudflare account
+2. Install [Node.js](https://nodejs.org/) 18+
+3. Clone and install:
+   ```bash
+   git clone https://github.com/investblog/qr-generator.git
+   cd qr-generator
+   npm install
+   ```
+4. Login to Cloudflare:
+   ```bash
+   npx wrangler login
+   ```
+5. Deploy:
+   ```bash
+   npx wrangler deploy
+   ```
+6. Your worker URL will be printed: `https://qr-generator.<your-account>.workers.dev`
+
+### CI/CD (GitHub Actions)
+
+Automatic deploy on push to `main`. Add repo secrets:
+- `CLOUDFLARE_API_TOKEN` — create at [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens) → "Edit Cloudflare Workers" template
+- `CLOUDFLARE_ACCOUNT_ID` — found in Workers & Pages → Overview (right sidebar)
+
+## Webstudio integration
+
+1. Create a **Resource** variable (e.g. `_qr`)
+2. Method: **Get**
+3. URL: `https://<your-worker>.workers.dev/qr.inline`
+4. Search Params: `data` = your target URL
+
+For dynamic QR codes per page, use an expression in the `data` param — concatenate your base URL with `system.params.slug` or any other variable.
 
 ## Tech
 
