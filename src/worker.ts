@@ -12,6 +12,13 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     if (request.method !== 'GET') return notFound();
 
+    if (env.API_KEY && request.headers.get('X-API-Key') !== env.API_KEY) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    }
+
     const url = new URL(request.url);
 
     if (url.pathname === '/qr.svg') {
