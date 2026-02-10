@@ -6,6 +6,8 @@ Cloudflare Worker that generates ultra-lightweight B/W QR codes as optimized SVG
 
 **80 KB** (QR Monkey) → **5 KB** (this) for the same URL. Single `<path>` with run-length encoding, integer coordinates, no masks/clipPaths/floats.
 
+**Demo**: [qrcgen.com](https://qrcgen.com) | **API**: [qr.qrcgen.com](https://qr.qrcgen.com/qr.inline?data=https://qrcgen.com)
+
 ## Usage examples
 
 After deploying, your worker is available at `https://qr-generator.<your-account>.workers.dev`.
