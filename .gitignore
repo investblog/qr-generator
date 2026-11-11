@@ -5,3 +5,37 @@ dist/
 .claude/settings.local.json
 nul
 *.sample.svg
+
+# baseline from ~/.agents/templates/gitignore (agents migration 2026-11-11)
+.env
+.env.*
+!.env.example
+.secrets
+*.pem
+id_rsa
+id_ed25519
+.venv/
+venv/
+__pycache__/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+build/
+.astro/
+*.log
+.codegraph/
+.docindex/
+context/attachments/
+.DS_Store
+
+# agent infrastructure — this is a public repository: it holds the product only. The agent's rules,
+# plans, hooks, settings and memory stay on the maintainer's machine (canon BOOTSTRAP step 5).
+.agents/
+.claude/
+.codex/
+.opencode/
+.zcode/
+AGENTS.md
+CLAUDE.md
+opencode.json
+.mcp.json
