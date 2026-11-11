@@ -122,43 +122,58 @@ async function handleCanonical(
   // Cache key = pathname only (no query params)
   const cacheKey = new Request(new URL(url.pathname, url.origin).toString());
 
-  const cached = await cache.match(cacheKey);
-  if (cached) {
-    const headers = new Headers(cached.headers);
-    headers.set('X-QR-Cache', 'HIT');
-    return new Response(cached.body, { status: 200, headers });
-  }
-
-  // Cache MISS — need query params to generate
-  const data = url.searchParams.get('data');
-  if (!data) {
+  // Bare canonical URL (no data): the cache is the only source; nothing can be verified or written here.
+  if (!url.searchParams.has('data')) {
+    const cached = await cache.match(cacheKey);
+    if (cached) {
+      const headers = new Headers(cached.headers);
+      headers.set('X-QR-Cache', 'HIT');
+      return new Response(cached.body, { status: 200, headers });
+    }
     return badRequest('Cache miss and no data param. Use /qr.svg?data=... to generate.');
   }
 
-  const ecc = (url.searchParams.get('ecc') ?? env.DEFAULT_ECC ?? 'M').toUpperCase();
-  const quiet = Number(url.searchParams.get('q') ?? env.DEFAULT_QUIET ?? '4');
+  // With data: verify BEFORE touching the cache. The path's hash must be the hash of these exact
+  // params, otherwise anyone could plant an image under someone else's hash. ecc and q are required
+  // here (no defaults): /qr.svg's redirect always carries both, and defaults differ between configs.
+  if (!url.searchParams.has('ecc') || !url.searchParams.has('q')) {
+    return badRequest('Canonical URL with data requires ecc and q');
+  }
+  const probe = new URL(url);
+  probe.searchParams.set('p', presetId);
+  const result = parseParams(probe, env);
+  if (!result.ok) {
+    return result.status === 413 ? payloadTooLarge(result.message) : badRequest(result.message);
+  }
+  const { params } = result;
+  if ((await computeHash(params)) !== hash) {
+    return badRequest('Hash does not match the parameters');
+  }
 
   try {
-    const matrix = generateMatrix(data.trim(), ecc as 'L' | 'M' | 'Q' | 'H');
-    const svg = renderSvg(matrix, quiet, preset);
+    const matrix = generateMatrix(params.data, params.ecc);
+    const svg = renderSvg(matrix, params.quiet, preset);
+
+    // A cached entry is kept only if it is byte-identical to the verified render; a missing or
+    // planted entry is replaced, so a poisoned cache heals on the next verified request.
+    const cached = await cache.match(cacheKey);
+    const cachedOk = cached !== undefined && (await cached.text()) === svg;
 
     const headers = new Headers({
       'Content-Type': 'image/svg+xml; charset=utf-8',
       'Cache-Control': 'public, max-age=31536000, immutable',
       'ETag': `"${hash}"`,
-      'X-QR-Cache': 'MISS',
+      'X-QR-Cache': cachedOk ? 'HIT' : cached ? 'REPLACED' : 'MISS',
     });
 
-    const response = new Response(svg, { status: 200, headers });
-
-    // Cache in background (path-only key)
-    ctx.waitUntil(cache.put(cacheKey, new Response(svg, { status: 200, headers })));
-
-    if (env.LOG_MISS === 'true') {
-      console.log(`QR cache MISS: ${url.pathname}`);
+    if (!cachedOk) {
+      ctx.waitUntil(cache.put(cacheKey, new Response(svg, { status: 200, headers })));
+      if (env.LOG_MISS === 'true') {
+        console.log(`QR cache ${cached ? 'REPLACED' : 'MISS'}: ${url.pathname}`);
+      }
     }
 
-    return response;
+    return new Response(svg, { status: 200, headers });
   } catch (err) {
     return internalError(err instanceof Error ? err.message : 'QR generation failed');
   }

@@ -50,17 +50,26 @@ Edge-cached by full URL (24h TTL). Same URL = instant response from cache on sub
 
 ### `GET /qr/<preset>/<hash>.svg` — canonical (edge-cached)
 
-Serves SVG from Cloudflare edge cache. Cache key is pathname only (no query).
-- **HIT** → instant response, `X-QR-Cache: HIT`
-- **MISS** → generates SVG, caches in background, `X-QR-Cache: MISS`
-- **MISS without query params** → `400` with instructions
+Cache key is pathname only (no query).
+
+**Without query** (`/qr/<preset>/<hash>.svg`): served from the Cloudflare edge cache only.
+- **HIT** → cached SVG, `X-QR-Cache: HIT`
+- **MISS** → `400` with instructions (the hash alone cannot be turned back into the data)
+
+**With query** (`?data=…&ecc=…&q=…`, as in the `/qr.svg` redirect): `data`, `ecc` and `q` are all
+required, and the worker checks that they hash to the `<hash>` in the path **before** using the cache —
+a mismatch is `400` and nothing is cached. On a match it renders the SVG and compares it with the cached
+copy:
+- `X-QR-Cache: HIT` — the cached copy is identical
+- `X-QR-Cache: MISS` — nothing was cached; the SVG is cached in the background
+- `X-QR-Cache: REPLACED` — the cached copy differed and is overwritten with the verified SVG
 
 Headers on canonical response:
 ```
 Content-Type: image/svg+xml; charset=utf-8
 Cache-Control: public, max-age=31536000, immutable
 ETag: "<hash>"
-X-QR-Cache: HIT|MISS
+X-QR-Cache: HIT|MISS|REPLACED
 ```
 
 ## SVG output
