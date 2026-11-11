@@ -12,4 +12,4 @@ alternatives considered, and consequences.
 
 | # | Decision | Status |
 |---|---|---|
-| [0001](0001-persistent-image-store.md) | Persistent store for canonical QR images | proposed |
+| [0001](0001-persistent-image-store.md) | Persistent store for canonical QR images; bare URLs dropped | accepted |

@@ -1,32 +1,31 @@
 ---
 type: adr
-status: proposed
+status: accepted
 tags: [adr, storage, privacy]
 project: qr-generator
 ---
 
 # 0001 — Persistent store for canonical QR images
 
-**Status:** proposed (2026-11-12) — recommendation: do not build it now (option A). Awaiting the
-maintainer's decision.
+**Status:** accepted (2026-11-12) — no store; bare canonical URLs are dropped altogether (see
+*Decision*).
 
-## Context
+## Context (when this was decided)
 
 - A canonical URL is `/qr/<preset>/<sha256>.svg`. With `data`, `ecc` and `q` in the query the worker
-  re-creates the image, checks it against the hash and serves it (since 2026-11-11, see README). Without
-  them it can only answer from `caches.default`, which is **per Cloudflare location** and may evict
-  entries early; a miss is `400`.
-- The browser extension issued bare URLs until version 1.0.1. From 1.1.0 it issues self-contained URLs
-  (the query included), which work from every location. Its history re-links old entries from their
-  stored data, so users who copy a link again get a working one.
-- What a store would still add:
+  re-created the image, checked it against the hash and served it (since 2026-11-11). Without them it
+  could only answer from `caches.default`, which is **per Cloudflare location** and may evict entries
+  early; a miss was `400`.
+- The browser extension issued such bare URLs up to version 1.0.x. From 1.1.0 it issues self-contained
+  URLs (the query included), which work from every location. Its history re-links old entries from
+  their stored data, so users who copy a link again get a working one.
+- What a store would still have added:
   1. **Old bare links** already pasted somewhere. A store can only keep an image the worker has seen
      with its data *after* the store goes live; the data of links nobody re-issues is gone.
   2. **Short links** (no query) as a product feature.
-- Traffic is low (hundreds of requests a day). How often bare links fail is not measured: a canonical
-  path looks the same with and without a query, and `400` also covers missing parameters and hash
-  mismatches, so path + status is not enough — it needs a categorical counter (for example
-  `reason=bare-miss`, no data) in logs or Workers Analytics Engine.
+- Traffic is low. How often bare links failed was not measured: a canonical path looks the same with
+  and without a query, and `400` also covers missing parameters and hash mismatches, so path + status
+  is not enough — it would need a categorical counter (for example `reason=bare-miss`, no data).
 
 ## Options
 
@@ -64,8 +63,8 @@ read-after-write consistency would matter if short links had to work the moment 
   privacy policy, the extension's `PRIVACY.md` and store listing, and the extension guide.
 - Only explicit issuance may be stored. Extension versions before 1.1.0 request the link on every
   generation, including the automatic code for the current page whenever the panel opens; the server
-  cannot tell those requests from real issuance, and in 1.1.0 the warm-up after a copy is an ordinary
-  request too. Storing them would keep pages people merely visited. A store therefore needs a future
+  cannot tell those requests from real issuance (nor from a recipient opening a link). Storing them
+  would keep pages people merely visited. A store therefore needs a future
   extension change: a marker (such as a request header, not part of the shared URL) sent only when the
   user copies a link. Clients can forge it, so it does not replace the write budget below.
 - Retention needs a concrete period, chosen when a storage option is approved (none is chosen here),
@@ -79,18 +78,26 @@ read-after-write consistency would matter if short links had to work the moment 
   in the account it deploys to (per-environment bindings in `wrangler.toml`), or the extra deploy paths
   must go.
 
-## Decision (proposed)
+## Decision
 
-Option **A**. After self-contained links, a store only rescues a subset of old bare links (those
-re-issued after launch) and adds retained user content, a policy change, abuse controls and a new
-operational dependency. Revisit if either holds:
+Option **A**, and further: **bare canonical URLs are not supported at all.** After self-contained
+links, a store would only rescue a subset of old bare links (those re-issued after launch) and add
+retained user content, a policy change, abuse controls and a new operational dependency.
 
-- short links become a product requirement, or
-- measured `400`s on bare canonical URLs show old links failing at a meaningful rate.
+So the canonical path no longer uses `caches.default`: a URL with `data`, `ecc` and `q` is rebuilt and
+verified on every request, and a URL without `data` is `400`. The server-side cache existed only to
+answer bare URLs; without them it is dead weight and the only place an image could be planted.
+
+Revisit only if short links become a product requirement.
 
 ## Consequences
 
-- No new data retention to disclose (the policies still need to follow extension 1.1.0, which sends
-  data only when a link is copied or opened).
-- Bare links issued before extension 1.1.0 remain best effort (cache only).
-- The API documentation keeps recommending `/qr.svg` (redirect with query) or `/qr.inline` for embeds.
+- No persistent storage, and canonical images are not cached on the server (`/qr.inline` responses
+  are still edge-cached for 24 hours by full URL). Extension 1.1.0 makes no requests of its own: its
+  cache warm-up had no effect once the canonical path stopped caching, and was removed.
+- Bare links issued before extension 1.1.0 stop working once this is deployed. It must ship **after**
+  1.1.0 reaches users, since 1.0.x still hands out bare links.
+- Entries already in `caches.default` under canonical paths are never read again and expire on their own.
+- Every canonical request renders the QR (CPU per request instead of a cache hit); at current traffic
+  this is negligible. Browsers still cache the response (`immutable`).
+- The API documentation recommends `/qr.svg` (redirect with query) or `/qr.inline` for embeds.

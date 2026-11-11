@@ -20,6 +20,5 @@ export interface Env {
   readonly DEFAULT_ECC?: string;
   readonly DEFAULT_QUIET?: string;
   readonly MAX_DATA_LEN?: string;
-  readonly LOG_MISS?: string;
   readonly API_KEY?: string;
 }

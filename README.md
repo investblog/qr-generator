@@ -25,7 +25,7 @@ After deploying, your worker is available at `https://qr-generator.<your-account
 # No quiet zone
 /qr.inline?data=https://example.com&q=0
 
-# Canonical with edge cache (302 redirect)
+# Canonical URL (302 redirect to a self-contained, verifiable link)
 /qr.svg?data=https://example.com&p=sq300&ecc=Q
 ```
 
@@ -40,7 +40,7 @@ After deploying, your worker is available at `https://qr-generator.<your-account
 | `ecc` | no | `M` | Error correction: `L`, `M`, `Q`, `H` |
 | `q` | no | `2` | Quiet zone in modules (0–16) |
 
-Returns **302** → `/qr/<preset>/<sha256>.svg` with params in query for cold-cache regeneration.
+Returns **302** → `/qr/<preset>/<sha256>.svg?data=…&ecc=…&q=…` (the canonical URL, below).
 
 ### `GET /qr.inline` — direct SVG response (for embedding)
 
@@ -48,28 +48,20 @@ Same params as above. Returns **200** with `image/svg+xml` — no redirect, idea
 
 Edge-cached by full URL (24h TTL). Same URL = instant response from cache on subsequent requests. `X-QR-Cache: HIT|MISS` header for diagnostics.
 
-### `GET /qr/<preset>/<hash>.svg` — canonical (edge-cached)
+### `GET /qr/<preset>/<hash>.svg?data=…&ecc=…&q=…` — canonical
 
-Cache key is pathname only (no query).
+`data`, `ecc` and `q` are all required. The worker renders the SVG from them on every request and
+serves it only if they (with the preset from the path) hash to the `<hash>` in the path; otherwise
+`400`. Nothing is cached on the server, so the URL works from every edge location and no one can
+plant another image under a hash. A canonical URL without `data` (a "bare" URL, issued by extension
+versions before 1.1.0) is not supported and returns `400`
+([ADR 0001](docs/decisions/0001-persistent-image-store.md)).
 
-**Without query** (`/qr/<preset>/<hash>.svg`): served from the Cloudflare edge cache only.
-- **HIT** → cached SVG, `X-QR-Cache: HIT`
-- **MISS** → `400` with instructions (the hash alone cannot be turned back into the data)
-
-**With query** (`?data=…&ecc=…&q=…`, as in the `/qr.svg` redirect): `data`, `ecc` and `q` are all
-required, and the worker checks that they hash to the `<hash>` in the path **before** using the cache —
-a mismatch is `400` and nothing is cached. On a match it renders the SVG and compares it with the cached
-copy:
-- `X-QR-Cache: HIT` — the cached copy is identical
-- `X-QR-Cache: MISS` — nothing was cached; the SVG is cached in the background
-- `X-QR-Cache: REPLACED` — the cached copy differed and is overwritten with the verified SVG
-
-Headers on canonical response:
+Headers on canonical response (browsers and proxies may cache it):
 ```
 Content-Type: image/svg+xml; charset=utf-8
 Cache-Control: public, max-age=31536000, immutable
 ETag: "<hash>"
-X-QR-Cache: HIT|MISS|REPLACED
 ```
 
 ## SVG output
@@ -167,7 +159,7 @@ To generate a different QR code for each page (e.g. based on a URL slug):
    ```
    "https://your-domain.com/go/" + system.params.slug
    ```
-4. Each page with a different slug will get its own QR code, edge-cached automatically
+4. Each page with a different slug will get its own QR code (`/qr.inline` responses are edge-cached for 24 h)
 
 ### Customization params
 

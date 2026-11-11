@@ -10,7 +10,7 @@ import type { Env, QrParams } from '../src/types';
 const env: Env = { DEFAULT_PRESET: 'sq250', DEFAULT_ECC: 'M', DEFAULT_QUIET: '2', MAX_DATA_LEN: '2048' };
 const ORIGIN = 'https://qr.example';
 
-// caches.default stand-in: keyed by URL, keeps the stored Response (status + headers) and counts calls.
+// caches.default stand-in that records every use: the canonical path must never touch it.
 let stored: Map<string, Response>;
 let puts: string[];
 let matches: number;
@@ -23,11 +23,6 @@ const fakeCache = {
     puts.push(req.url);
     stored.set(req.url, res.clone());
   },
-};
-const store = {
-  get: (url: string) => stored.get(url)?.clone().text(),
-  set: (url: string, svg: string) =>
-    stored.set(url, new Response(svg, { headers: { 'Content-Type': 'image/svg+xml; charset=utf-8' } })),
 };
 
 let pending: Promise<unknown>[];
@@ -63,38 +58,42 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-describe('canonical URL with data: verified before the cache', () => {
-  it('a valid cold request renders and caches under the path-only key', async () => {
+describe('canonical URL: rebuilt and verified on every request, never cached', () => {
+  it('a valid request renders the image the hash names, with immutable headers', async () => {
     const { bare, full } = await canonical(legit);
     const res = await get(full);
     expect(res.status).toBe(200);
-    expect(res.headers.get('X-QR-Cache')).toBe('MISS');
     expect(await res.text()).toBe(svgFor(legit));
-    expect(await store.get(ORIGIN + bare)).toBe(svgFor(legit));
+    expect(res.headers.get('Content-Type')).toBe('image/svg+xml; charset=utf-8');
     expect(res.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
     expect(res.headers.get('ETag')).toBe(`"${bare.slice(-68, -4)}"`);
+    expect(res.headers.get('X-QR-Cache')).toBeNull();
+    expect(matches).toBe(0);
+    expect(puts).toEqual([]);
+  });
+
+  it('a planted cache entry under the same path is never served', async () => {
+    const { bare, full } = await canonical(legit);
+    stored.set(ORIGIN + bare, new Response(svgFor({ ...legit, data: evil })));
+    expect(await (await get(full)).text()).toBe(svgFor(legit));
+    expect((await get(bare)).status).toBe(400);
+    expect(matches).toBe(0);
   });
 
   it.each([
     ['data', (q: string) => q.replace(encodeURIComponent(legit.data), encodeURIComponent(evil))],
     ['ecc', (q: string) => q.replace('ecc=M', 'ecc=H')],
     ['q', (q: string) => q.replace('q=2', 'q=4')],
-  ])('tampered %s under a valid hash is refused without touching the cache', async (_name, tamper) => {
-    const { bare, full } = await canonical(legit);
-    store.set(ORIGIN + bare, svgFor(legit)); // a real, cached code is the target
+  ])('tampered %s under a valid hash is refused', async (_name, tamper) => {
+    const { full } = await canonical(legit);
     const res = await get(tamper(full));
     expect(res.status).toBe(400);
-    expect(matches).toBe(0);
-    expect(puts).toEqual([]);
-    expect(await store.get(ORIGIN + bare)).toBe(svgFor(legit));
+    expect(await res.text()).toContain('Hash does not match');
   });
 
-  it('the hash of one preset under another preset path is refused without touching the cache', async () => {
+  it('the hash of one preset under another preset path is refused', async () => {
     const { full } = await canonical(legit);
-    const res = await get(full.replace('/qr/sq250/', '/qr/sq300/'));
-    expect(res.status).toBe(400);
-    expect(matches).toBe(0);
-    expect(puts).toEqual([]);
+    expect((await get(full.replace('/qr/sq250/', '/qr/sq300/'))).status).toBe(400);
   });
 
   it.each([
@@ -114,40 +113,26 @@ describe('canonical URL with data: verified before the cache', () => {
     ['q', (q: string) => q.replace('&q=2', '')],
   ])('missing %s is refused (no defaults on the canonical path)', async (_name, drop) => {
     const { full } = await canonical(legit);
-    const res = await get(drop(full));
-    expect(res.status).toBe(400);
-    expect(puts).toEqual([]);
-  });
-
-  it('a pre-poisoned cache entry is not served to a verified request, and is replaced', async () => {
-    const { bare, full } = await canonical(legit);
-    const poisoned = svgFor({ ...legit, data: evil });
-    store.set(ORIGIN + bare, poisoned);
-
-    const res = await get(full);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('X-QR-Cache')).toBe('REPLACED');
-    expect(await res.text()).toBe(svgFor(legit));
-    expect(await store.get(ORIGIN + bare)).toBe(svgFor(legit));
-    // and the bare URL now serves the verified image, with the canonical headers
-    const after = await get(bare);
-    expect(await after.text()).toBe(svgFor(legit));
-    expect(after.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
-    expect(after.headers.get('X-QR-Cache')).toBe('HIT');
-  });
-
-  it('an intact cache entry is a HIT and is not rewritten', async () => {
-    const { bare, full } = await canonical(legit);
-    store.set(ORIGIN + bare, svgFor(legit));
-    const res = await get(full);
-    expect(res.headers.get('X-QR-Cache')).toBe('HIT');
-    expect(puts).toEqual([]);
+    expect((await get(drop(full))).status).toBe(400);
   });
 
   it('oversized data is 413, as on /qr.svg', async () => {
     const big: QrParams = { ...legit, data: 'a'.repeat(2049) };
     const { full } = await canonical(big);
     expect((await get(full)).status).toBe(413);
+  });
+});
+
+describe('bare canonical URL (no data) is not supported', () => {
+  it.each([
+    ['no query', ''],
+    ['a query without data', '?ecc=M&q=2'],
+  ])('%s is 400 with a hint', async (_name, query) => {
+    const { bare } = await canonical(legit);
+    const res = await get(bare + query);
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain('/qr.svg?data=');
+    expect(matches).toBe(0);
   });
 });
 
@@ -160,21 +145,5 @@ describe('the /qr.svg redirect still round-trips', () => {
     const img = await get(location);
     expect(img.status).toBe(200);
     expect(await img.text()).toBe(svgFor(legit));
-  });
-});
-
-describe('bare canonical URL (legacy)', () => {
-  it('serves a cached entry', async () => {
-    const { bare } = await canonical(legit);
-    store.set(ORIGIN + bare, svgFor(legit));
-    const res = await get(bare);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('X-QR-Cache')).toBe('HIT');
-  });
-
-  it('a miss is 400 and writes nothing', async () => {
-    const { bare } = await canonical(legit);
-    expect((await get(bare)).status).toBe(400);
-    expect(puts).toEqual([]);
   });
 });

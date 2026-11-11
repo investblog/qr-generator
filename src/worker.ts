@@ -31,7 +31,7 @@ export default {
 
     const match = CANONICAL_RE.exec(url.pathname);
     if (match) {
-      return handleCanonical(request, url, env, ctx, match[1], match[2]);
+      return handleCanonical(url, env, match[1], match[2]);
     }
 
     return notFound();
@@ -104,38 +104,22 @@ async function handleInline(request: Request, url: URL, env: Env, ctx: Execution
   }
 }
 
-async function handleCanonical(
-  request: Request,
-  url: URL,
-  env: Env,
-  ctx: ExecutionContext,
-  presetId: string,
-  hash: string,
-): Promise<Response> {
+/**
+ * Canonical URL `/qr/<preset>/<hash>.svg?data=…&ecc=…&q=…`: the image is rebuilt from the query on
+ * every request and served only if the path's hash is the hash of exactly these params. Nothing is
+ * cached server-side, so there is nothing to poison. Bare URLs (no data) are not supported: the hash
+ * alone cannot be turned back into an image.
+ */
+async function handleCanonical(url: URL, env: Env, presetId: string, hash: string): Promise<Response> {
   if (!isValidPreset(presetId)) {
     return badRequest(`Invalid preset: ${presetId}`);
   }
-
-  const preset = getPreset(presetId);
-  const cache = caches.default;
-
-  // Cache key = pathname only (no query params)
-  const cacheKey = new Request(new URL(url.pathname, url.origin).toString());
-
-  // Bare canonical URL (no data): the cache is the only source; nothing can be verified or written here.
   if (!url.searchParams.has('data')) {
-    const cached = await cache.match(cacheKey);
-    if (cached) {
-      const headers = new Headers(cached.headers);
-      headers.set('X-QR-Cache', 'HIT');
-      return new Response(cached.body, { status: 200, headers });
-    }
-    return badRequest('Cache miss and no data param. Use /qr.svg?data=... to generate.');
+    return badRequest('Canonical URL requires data, ecc and q. Use /qr.svg?data=... to get one.');
   }
 
-  // With data: verify BEFORE touching the cache. The path's hash must be the hash of these exact
-  // params, otherwise anyone could plant an image under someone else's hash. ecc and q are required
-  // here (no defaults): /qr.svg's redirect always carries both, and defaults differ between configs.
+  // ecc and q are required (no defaults): /qr.svg's redirect always carries both, and defaults
+  // differ between configs.
   if (!url.searchParams.has('ecc') || !url.searchParams.has('q')) {
     return badRequest('Canonical URL with data requires ecc and q');
   }
@@ -152,28 +136,15 @@ async function handleCanonical(
 
   try {
     const matrix = generateMatrix(params.data, params.ecc);
-    const svg = renderSvg(matrix, params.quiet, preset);
-
-    // A cached entry is kept only if it is byte-identical to the verified render; a missing or
-    // planted entry is replaced, so a poisoned cache heals on the next verified request.
-    const cached = await cache.match(cacheKey);
-    const cachedOk = cached !== undefined && (await cached.text()) === svg;
-
-    const headers = new Headers({
-      'Content-Type': 'image/svg+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-      'ETag': `"${hash}"`,
-      'X-QR-Cache': cachedOk ? 'HIT' : cached ? 'REPLACED' : 'MISS',
+    const svg = renderSvg(matrix, params.quiet, getPreset(presetId));
+    return new Response(svg, {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/svg+xml; charset=utf-8',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'ETag': `"${hash}"`,
+      },
     });
-
-    if (!cachedOk) {
-      ctx.waitUntil(cache.put(cacheKey, new Response(svg, { status: 200, headers })));
-      if (env.LOG_MISS === 'true') {
-        console.log(`QR cache ${cached ? 'REPLACED' : 'MISS'}: ${url.pathname}`);
-      }
-    }
-
-    return new Response(svg, { status: 200, headers });
   } catch (err) {
     return internalError(err instanceof Error ? err.message : 'QR generation failed');
   }
